@@ -66,6 +66,7 @@ export function validateStoryPackReferences(pack: StoryPack): void {
 
   for (const ending of endings) {
     const field = `endings.json (${ending.id})`;
+    checkReferences(ending.requiresEventIds ?? [], eventIds, `${field}.requiresEventIds`);
     checkReferences([ending.sceneId], sceneById, `${field}.sceneId`);
     if (ending.afterEventId) checkReferences([ending.afterEventId], eventIds, field);
     checkReferences(ending.requiresClueIds, clueById, `${field}.requiresClueIds`);

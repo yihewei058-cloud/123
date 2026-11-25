@@ -173,7 +173,7 @@ export function CameraFeed({ sceneId, eventIds = [], reply, whitePinAtEntrance =
     const pursuer = hei.current;
     if (cue.hei) {
       if (!pursuer.visible) {
-        const [x, y] = firstShot ? cue.hei.at : scene.heiExit;
+        const [x, y] = firstShot ? cue.hei.at : scene.heiEnter ?? scene.heiExit;
         Object.assign(pursuer, { x, y, step: 0, visible: true, face: x < cue.qu.at[0] ? 1 : -1 });
       }
       pursuer.target = cue.hei;
@@ -251,11 +251,13 @@ export function CameraFeed({ sceneId, eventIds = [], reply, whitePinAtEntrance =
       const walkingQu = moveActor(qu.current, dt, now, scene.walk, canWander(qu.current.target, hei.current.visible));
       const walkingHei = moveActor(hei.current, dt, now);
       // A footfall lands twice per stride; louder when close to the camera, panned by position.
-      for (const [actor, heavy] of [[qu.current, false], [hei.current, true]] as const) {
+      for (const [actor, walking, heavy] of [[qu.current, walkingQu, false], [hei.current, walkingHei, true]] as const) {
         const footfall = Math.floor(actor.step / Math.PI);
         if (footfall !== actor.footfall) {
           actor.footfall = footfall;
-          if (actor.visible) playFootstep({ pan: (actor.x - 160) / 160, level: 0.06 + 0.16 * (figureScale(actor.y) / 2.4), heavy });
+          if (walking && actor.visible) {
+            playFootstep({ pan: actor.x / (CAMERA_WIDTH / 2) - 1, level: 0.08 + 0.16 * (figureScale(actor.y) / 2.4), heavy });
+          }
         }
       }
       sinceDraw += dt * 1000;

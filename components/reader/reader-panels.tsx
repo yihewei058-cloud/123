@@ -4,7 +4,7 @@ import type { NarrativeBlock } from "../../lib/engine/narrative-block";
 import { splitSpokenLines } from "../../lib/reader/dialogue";
 import { formatTime, StudyFeed } from "./study-feed";
 import { SoundToggle } from "./camera-feed";
-import { playTypeKey } from "../../lib/reader/audio";
+import { playRefusalAlarm, playTypeKey } from "../../lib/reader/audio";
 
 // Right-hand control strip of the CRT: two dials, a power lamp, the sound button and a speaker grille.
 function TvPanel() {
@@ -129,6 +129,15 @@ export function ScenePanel({ scene, sceneId, eventIds, reply, story, logKey, sta
   const unreadClues = tab === "story" ? Math.max(0, clues.length - seenClues) : 0;
   const typing = shown < lines.length;
   const current = lines[shown];
+
+  useEffect(() => {
+    if (current?.kind !== "text" || !current.text.startsWith("研究中心广播突然响起")) return;
+    const stop = playRefusalAlarm();
+    let stopped = false;
+    const finish = () => { if (!stopped) { stopped = true; stop?.(); } };
+    const timer = window.setTimeout(finish, 4000);
+    return () => { window.clearTimeout(timer); finish(); };
+  }, [current?.id]);
 
   useEffect(() => {
     if (!typing) onLogComplete(logKey);

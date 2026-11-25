@@ -34,7 +34,9 @@ function useTypedHint(message: string, idle: string, active: boolean) {
   return message.slice(0, shown) + (caret || shown < message.length ? "▍" : "");
 }
 
-export function StoryPreview({ onComplete, onExit }: { onComplete?: () => void; onExit?: () => void }) {
+export function StoryPreview({ onComplete, onExit, onProgress }: {
+  onComplete?: () => void; onExit?: () => void; onProgress?: (view: ReaderView) => void;
+}) {
   const [frame, setFrame] = useState<{ view: ReaderView; previous?: ReaderView }>();
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
@@ -109,6 +111,10 @@ export function StoryPreview({ onComplete, onExit }: { onComplete?: () => void; 
   const visibleMessages = holdOpening ? messages.filter(entry => entry.sequence < firstReply.sequence) : messages;
 
   useEffect(() => {
+    if (view && logComplete && !pendingReply) onProgress?.(view);
+  }, [view, logComplete, pendingReply, onProgress]);
+
+  useEffect(() => {
     if (started.current) return;
     started.current = true;
     void send({ action: "start" });
@@ -118,7 +124,7 @@ export function StoryPreview({ onComplete, onExit }: { onComplete?: () => void; 
     if (!view || view.mode !== "advancing" || pending || failure || !logComplete || pendingReply) return;
     const timer = window.setTimeout(() => {
       void send({ action: "step", id: view.id, revision: view.revision });
-    }, 1400);
+    }, Math.max(1400, view.nextStepDelayMs ?? 0));
     return () => window.clearTimeout(timer);
   }, [view, pending, failure, logComplete, pendingReply, send]);
 

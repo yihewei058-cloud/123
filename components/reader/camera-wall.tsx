@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { playFootstep } from "../../lib/reader/audio";
 import {
   CAMERA_HEIGHT, CAMERA_WIDTH, drawFigure, drawFlashlight, drawInterference, drawShell,
-  pursuerLook, sceneProps, type Drawable,
+  protagonistLook, pursuerLook, sceneProps, type Drawable,
 } from "../../lib/reader/camera-scene";
-import { cueFor } from "../../lib/reader/camera-staging";
+import { cueFor, firstHallPursuerStop } from "../../lib/reader/camera-staging";
 import "./camera-wall.css";
 
 const channels = [
@@ -18,17 +19,34 @@ const channels = [
 type Channel = typeof channels[number]["id"];
 type Surface = RefObject<HTMLCanvasElement | null>;
 
-// These existing story beats describe moving light outside the current camera.
-const offscreenSightings = [
-  { scene: "s01", event: "e008", channel: "s02", from: 34, to: 136 },
-  { scene: "s03", event: "e029", channel: "s04", from: 192, to: 74 },
-] as const;
-type Sighting = typeof offscreenSightings[number];
+type Sighting = {
+  scene: string;
+  event: string;
+  channel: Channel;
+  actor: "黑针" | "曲别针";
+  from: readonly [number, number];
+  to: readonly [number, number];
+  duration: number;
+  exits?: boolean;
+};
+const offscreenSightings: readonly Sighting[] = [
+  { scene: "s01", event: "e008", channel: "s02", actor: "黑针",
+    from: [294, 129], to: firstHallPursuerStop, duration: 3000 },
+  { scene: "s01", event: "step-into-hall", channel: "s02", actor: "黑针",
+    from: firstHallPursuerStop, to: firstHallPursuerStop, duration: 0 },
+  { scene: "s01", event: "wait-for-pursuer", channel: "s02", actor: "黑针",
+    from: firstHallPursuerStop, to: [335, 130], duration: 2300, exits: true },
+  { scene: "s01", event: "stairs-after-patrol", channel: "s02", actor: "曲别针",
+    from: [107, 104], to: [54, 111], duration: 1200 },
+  { scene: "s03", event: "e029", channel: "s04", actor: "黑针",
+    from: [192, 122], to: [74, 122], duration: 2300 },
+];
 
-function WallFootage({ channel, source, sighting }: {
+function WallFootage({ channel, source, sighting, beatStartedAt }: {
   channel: Channel;
   source?: Surface;
   sighting?: Sighting;
+  beatStartedAt: RefObject<number>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
 
@@ -46,6 +64,7 @@ function WallFootage({ channel, source, sighting }: {
     const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     const openedAt = performance.now();
     let last = -Infinity;
+    let previousFootfall: number | undefined;
     let frame = 0;
 
     function render(now: number) {
@@ -58,15 +77,23 @@ function WallFootage({ channel, source, sighting }: {
       }
       ctx.drawImage(room, 0, 0);
       const layers: Drawable[] = [...props];
-      if (sighting) {
-        const progress = reducedMotion.matches ? 1 : Math.min(1, (now - openedAt) / 2300);
-        const fx = sighting.from + (sighting.to - sighting.from) * progress;
-        const fy = 122;
-        const face = sighting.to > sighting.from ? 1 : -1;
+      const progress = sighting?.duration && !reducedMotion.matches
+        ? Math.max(0, Math.min(1, (now - beatStartedAt.current) / sighting.duration)) : 1;
+      if (sighting && !(sighting.exits && progress === 1)) {
+        const fx = sighting.from[0] + (sighting.to[0] - sighting.from[0]) * progress;
+        const fy = sighting.from[1] + (sighting.to[1] - sighting.from[1]) * progress;
+        const face = sighting.to[0] > sighting.from[0] ? 1 : -1;
+        const look = sighting.actor === "黑针" ? pursuerLook : protagonistLook;
+        const step = progress * 19;
+        const footfall = Math.floor(step / Math.PI);
+        if (progress < 1 && previousFootfall !== undefined && previousFootfall !== footfall && !canvas.current?.parentElement?.hidden) {
+          playFootstep({ pan: fx / (CAMERA_WIDTH / 2) - 1, level: 0.14, heavy: sighting.actor === "黑针" });
+        }
+        previousFootfall = footfall;
         layers.push({ baseY: fy, draw: target => {
-          drawFigure(target, { fx, fy, face, pose: "stand", step: progress * 19,
-            walking: progress < 1, look: pursuerLook, tick: Math.floor(now / 83) });
-          drawFlashlight(target, fx, fy, face, now);
+          drawFigure(target, { fx, fy, face, pose: "stand", step,
+            walking: progress < 1, look, tick: Math.floor(now / 83) });
+          if (look.flashlight) drawFlashlight(target, fx, fy, face, now);
         } });
       }
       layers.sort((a, b) => a.baseY - b.baseY).forEach(layer => layer.draw(ctx));
@@ -75,15 +102,16 @@ function WallFootage({ channel, source, sighting }: {
 
     render(openedAt);
     return () => cancelAnimationFrame(frame);
-  }, [channel, sighting, source]);
+  }, [channel, sighting, source, beatStartedAt]);
 
   return <canvas ref={canvas} className="camera-image" width={CAMERA_WIDTH} height={CAMERA_HEIGHT} aria-hidden="true" />;
 }
 
-export function CameraWall({ sceneId, eventIds, surface }: {
+export function CameraWall({ sceneId, eventIds, surface, beatStartedAt }: {
   sceneId: string;
   eventIds?: readonly string[];
   surface: Surface;
+  beatStartedAt: RefObject<number>;
 }) {
   const [focused, setFocused] = useState<Channel>();
   const cue = cueFor(sceneId, eventIds ?? []);
@@ -98,7 +126,7 @@ export function CameraWall({ sceneId, eventIds, surface }: {
           const live = channel.id === sceneId;
           const onThisChannel = sighting?.channel === channel.id ? sighting : undefined;
           const label = [channel.title, live && !cue?.qu.exit ? "曲别针" : "",
-            onThisChannel || (live && cue?.hei) ? "黑针" : ""].filter(Boolean).join("，");
+            onThisChannel?.actor ?? (live && cue?.hei ? "黑针" : "")].filter(Boolean).join("，");
           return <button type="button" key={channel.id} className="camera-wall-tile"
             hidden={!!focused && !selected}
             aria-label={selected ? `${label}，返回多路画面` : `放大${label}镜头`}
@@ -109,7 +137,8 @@ export function CameraWall({ sceneId, eventIds, surface }: {
                 setFocused(undefined);
               }
             }}>
-            <WallFootage channel={channel.id} source={live ? surface : undefined} sighting={onThisChannel} />
+            <WallFootage channel={channel.id} source={live ? surface : undefined} sighting={onThisChannel}
+              beatStartedAt={beatStartedAt} />
             <span className="reader-crt" aria-hidden="true" />
             <span className="camera-wall-location" aria-hidden="true">{channel.title}</span>
           </button>;

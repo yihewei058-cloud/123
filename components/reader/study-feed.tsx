@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Grid2X2 } from "lucide-react";
 import studyCamera from "../../design/reader-crt-study/study-camera.png";
 import { CameraFeed, useShiftClock } from "./camera-feed";
@@ -19,15 +19,17 @@ export function StudyFeed({ scene, sceneId, eventIds, reply, onExit }: {
   const live = sceneId && /^s0[1-6]$/.test(sceneId);
   const [wallOpen, setWallOpen] = useState(false);
   const surface = useRef<HTMLCanvasElement>(null);
+  const beatStartedAt = useRef(0);
+  const latestEvent = eventIds?.at(-1);
+  useEffect(() => { beatStartedAt.current = performance.now(); }, [latestEvent]);
   const showWall = !!(wallOpen && onExit && live);
   return (
     <div className={`reader-feed${showWall ? " has-camera-wall" : ""}`} id="reader-feed">
       {live && <CameraFeed sceneId={sceneId} eventIds={eventIds} reply={reply} surfaceRef={surface} />}
       {scene === "书房" && <img src={studyCamera.src} width={studyCamera.width} height={studyCamera.height} alt="书房示意图，旧门旁的桌面上摆着一张便签。" />}
       <div className="reader-crt" aria-hidden="true" />
-      {showWall && <CameraWall sceneId={sceneId} eventIds={eventIds} surface={surface} />}
+      {showWall && <CameraWall sceneId={sceneId} eventIds={eventIds} surface={surface} beatStartedAt={beatStartedAt} />}
       <div className="reader-feed-top reader-meta">
-        {onExit && !showWall && <button type="button" className="camera-exit" onClick={onExit}>退出</button>}
         {onExit && live && <button type="button" className="camera-exit camera-wall-toggle"
           aria-label={showWall ? "关闭多路监控" : "打开多路监控"} aria-pressed={showWall}
           onClick={() => setWallOpen(open => !open)}><Grid2X2 size={15} aria-hidden="true" /></button>}

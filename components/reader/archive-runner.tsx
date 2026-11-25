@@ -1,14 +1,10 @@
 "use client";
 
+import { ArrowUp, Play, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { advanceRun, birdY, ground, jumpRun, runnerX, startRun, width, type Run } from "../../lib/reader/archive-runner-physics";
 
-const width = 600;
-const ground = 107;
-const runnerX = 62;
-const checkpoints = 9;
-type Result = "ready" | "running" | "collision" | "complete";
-type Run = { height: number; velocity: number; treeX: number; cleared: number };
-const startRun = (): Run => ({ height: 0, velocity: 0, treeX: width - 30, cleared: 0 });
+type Result = "ready" | "running" | "tree" | "bird" | "complete";
 
 function draw(ctx: CanvasRenderingContext2D, run: Run) {
   ctx.fillStyle = "#e6eef0";
@@ -18,13 +14,24 @@ function draw(ctx: CanvasRenderingContext2D, run: Run) {
   ctx.fillStyle = "#6a8792";
   ctx.fillRect(0, ground, width, 2);
 
-  const x = Math.round(run.treeX);
-  ctx.fillStyle = "#6d5b52";
-  ctx.fillRect(x + 9, ground - 15, 6, 15);
-  ctx.fillStyle = "#377359";
-  ctx.fillRect(x + 7, ground - 30, 10, 18);
-  ctx.fillRect(x + 3, ground - 24, 18, 11);
-  ctx.fillRect(x, ground - 18, 24, 7);
+  const x = Math.round(run.obstacle.x);
+  if (run.obstacle.kind === "tree") {
+    ctx.fillStyle = "#6d5b52";
+    ctx.fillRect(x + 9, ground - 15, 6, 15);
+    ctx.fillStyle = "#377359";
+    ctx.fillRect(x + 7, ground - 30, 10, 18);
+    ctx.fillRect(x + 3, ground - 24, 18, 11);
+    ctx.fillRect(x, ground - 18, 24, 7);
+  } else {
+    const wingY = Math.floor(x / 22) % 2 === 0 ? birdY : birdY + 8;
+    ctx.fillStyle = "#465267";
+    ctx.fillRect(x + 4, birdY + 4, 18, 6);
+    ctx.fillRect(x + 3, birdY + 2, 7, 6);
+    ctx.fillRect(x + 19, birdY + 3, 7, 3);
+    ctx.fillRect(x + 12, wingY, 7, 5);
+    ctx.fillStyle = "#9b6d4d";
+    ctx.fillRect(x, birdY + 5, 4, 2);
+  }
 
   const y = Math.round(ground - run.height - 23);
   ctx.fillStyle = "#26597b";
@@ -40,14 +47,12 @@ export function ArchiveRunner({ active }: { active: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const run = useRef(startRun());
   const [result, setResult] = useState<Result>("ready");
-  const [cleared, setCleared] = useState(0);
   const jump = useCallback(() => {
     if (result !== "running") {
       run.current = startRun();
-      setCleared(0);
       setResult("running");
     }
-    if (run.current.height === 0) run.current.velocity = 425;
+    jumpRun(run.current);
   }, [result]);
 
   useEffect(() => {
@@ -77,24 +82,11 @@ export function ArchiveRunner({ active }: { active: boolean }) {
       const dt = lastTime === undefined ? 0 : Math.min(0.033, (now - lastTime) / 1000);
       lastTime = now;
       const state = run.current;
-      if (state.velocity || state.height) {
-        state.height = Math.max(0, state.height + state.velocity * dt);
-        state.velocity = state.height ? state.velocity - 1180 * dt : 0;
-      }
-      state.treeX -= (230 + Math.floor(state.cleared / 3) * 36) * dt;
+      const outcome = advanceRun(state, dt);
       draw(ctx!, state);
-      if (state.treeX < runnerX + 19 && state.treeX + 22 > runnerX + 2 && state.height < 27) {
-        setResult("collision");
+      if (outcome) {
+        setResult(outcome);
         return;
-      }
-      if (state.treeX + 24 < 0) {
-        state.cleared++;
-        setCleared(state.cleared);
-        if (state.cleared === checkpoints) {
-          setResult("complete");
-          return;
-        }
-        state.treeX = width - (state.cleared % 2 ? 92 : 45);
       }
       frame = requestAnimationFrame(animate);
     }
@@ -102,16 +94,16 @@ export function ArchiveRunner({ active }: { active: boolean }) {
     return () => cancelAnimationFrame(frame);
   }, [active, result]);
 
+  const ActionIcon = result === "ready" ? Play : result === "running" ? ArrowUp : RotateCcw;
+  const action = result === "ready" ? "开始" : result === "running" ? "跳跃" : "重玩";
+
   return <section className="archive-runner" aria-label="夜班越野">
-    <div className="archive-runner-heading">
-      <strong>夜班越野</strong>
-      <span>第 {Math.min(3, Math.floor(cleared / 3) + 1)} 关</span>
-    </div>
     <canvas ref={canvas} width={width} height={125} aria-hidden="true" />
-    <div className="archive-runner-controls">
-      <span role="status">{result === "collision" ? "撞到了树，再试一次。" :
-        result === "complete" ? "三关全部通过。" : "按空格跳过树木"}</span>
-      <button type="button" onClick={jump}>{result === "ready" ? "开始" : result === "running" ? "跳跃" : "重玩"}</button>
-    </div>
+    <button className="archive-runner-action" type="button" aria-label={action} title={action} onClick={jump}>
+      <ActionIcon size={17} aria-hidden="true" />
+    </button>
+    <span className="sr-only" role="status">{result === "tree" ? "撞到了树，再试一次。" :
+      result === "bird" ? "撞到了飞鸟，再试一次。" :
+      result === "complete" ? "三关全部通过。" : ""}</span>
   </section>;
 }

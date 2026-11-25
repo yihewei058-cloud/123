@@ -10,6 +10,7 @@ let reverb: ConvolverNode | null = null;
 let muted = false;
 let volume: number | undefined;
 let scoreStarted = false;
+let footstepNoise: AudioBuffer | undefined;
 const listeners = new Set<(muted: boolean) => void>();
 
 const MUTE_KEY = "reader-sound-muted";
@@ -329,26 +330,50 @@ export function playTypeKey() {
 
 // One footfall. `pan` is -1 (left) to 1 (right); `level` grows as the walker nears the camera.
 export function playFootstep({ pan, level, heavy }: { pan: number; level: number; heavy: boolean }) {
-  if (!context || !effectsMix || muted || context.state !== "running") return;
+  if (!context || !effectsMix || muted || getAudioVolume() === 0 || context.state !== "running") return;
   const ctx = context;
   const when = ctx.currentTime;
+  const duration = heavy ? 0.16 : 0.105;
+  const peak = Math.min(0.64, level * (heavy ? 2.8 : 2.3));
   const source = ctx.createBufferSource();
-  source.buffer = noiseBuffer(ctx, 0.09);
+  source.buffer = footstepNoise ??= noiseBuffer(ctx, 0.17);
   const filter = ctx.createBiquadFilter();
   filter.type = "bandpass";
-  filter.frequency.value = (heavy ? 220 : 520) * (0.9 + Math.random() * 0.2);
-  filter.Q.value = 1.2;
+  filter.frequency.value = (heavy ? 380 : 880) * (0.9 + Math.random() * 0.2);
+  filter.Q.value = 0.8;
   const env = ctx.createGain();
-  const peak = Math.min(0.8, level * 2.2) * (heavy ? 1.3 : 1);
-  env.gain.setValueAtTime(peak, when);
-  env.gain.exponentialRampToValueAtTime(0.001, when + (heavy ? 0.16 : 0.09));
+  env.gain.setValueAtTime(0.001, when);
+  env.gain.linearRampToValueAtTime(peak, when + 0.008);
+  env.gain.exponentialRampToValueAtTime(0.001, when + duration);
   const panner = ctx.createStereoPanner();
   panner.pan.value = Math.max(-1, Math.min(1, pan));
   source.connect(filter).connect(env).connect(panner).connect(effectsMix);
+
+  const heel = ctx.createOscillator();
+  heel.frequency.setValueAtTime(heavy ? 115 : 175, when);
+  heel.frequency.exponentialRampToValueAtTime(heavy ? 59 : 95, when + 0.06);
+  const heelGain = ctx.createGain();
+  heelGain.gain.setValueAtTime(0.001, when);
+  heelGain.gain.linearRampToValueAtTime(peak * (heavy ? 0.4 : 0.19), when + 0.006);
+  heelGain.gain.exponentialRampToValueAtTime(0.001, when + duration);
+  heel.connect(heelGain).connect(panner);
+
+  let send: GainNode | undefined;
   if (reverb) {
-    const send = ctx.createGain();
-    send.gain.value = 0.15;
+    send = ctx.createGain();
+    send.gain.value = 0.1;
     panner.connect(send).connect(reverb);
   }
+  source.onended = () => {
+    source.disconnect();
+    filter.disconnect();
+    env.disconnect();
+    heel.disconnect();
+    heelGain.disconnect();
+    panner.disconnect();
+    send?.disconnect();
+  };
   source.start(when);
+  heel.start(when);
+  heel.stop(when + duration);
 }

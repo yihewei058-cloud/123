@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { progressMail } from "./progress-mail.ts";
 import { createNarrativeAgent } from "../agent/narrative-agent.ts";
+import type { NarrativeAgent } from "../agent/mock-agent.ts";
 import { startSession } from "../engine/narrative-engine.ts";
 import type { TimelineEntry } from "../engine/narrative-timeline.ts";
 import { createDeepSeekProvider } from "../providers/deepseek-provider.ts";
@@ -32,28 +34,52 @@ const actionReplies: Record<string, string> = {
   e004: "我先核对手机里收到的目录。",
   e007: "我去门边听一下。你帮我看着外面。",
   "leave-now": "好，我把文件收好，从档案室出去。",
+  "step-into-hall": "好，我先出去看看。",
+  "wait-for-pursuer": "好，我先不出去。等他的脚步过去，我再上楼。",
   e009: "我从办公室绕过去，文件袋不会放下。",
-  e011: "好，我走楼梯去二楼。帮我盯着他。",
+  e011: "我现在出去找他，这样可能会被发现。",
+  e014: "他已经走远了。我现在去二楼继续查。",
+  "safe-escape": "我不查了，趁他走远从一楼撤出去。",
   e012: "我先躲进储物间，等手电移开。",
   e024: "我看看他们私下怎么讨论这份报告。",
   e025: "我把正式报告和眼前这份原始记录对一下。",
-  e027: "好，我让屏幕回到待机，再往后退。",
-  e028: "我先留在隔断后面，看看门边的动静。",
-  e031: "我问他在那份报告上签了什么。",
+  e031: "我先留在门后，等他走远再去地下室。",
   e032: "他挡着走廊。我先等他的手电移开，再找机会撤。",
   e040: "我不想再让他拿走这些东西。",
   e041: "好，我先退开，带着资料找出口。",
-  e053: "我先听他的条件，文件袋留在我手上。",
+  e053: "我先收好现有材料，准备离开。",
   e054: "材料先留在我手上。我不会把它们交给他。",
-  e055: "我先核对他拿来的文件，看能不能对上。",
+  e055: "我先核对补充文件，看看能不能对上。",
   e058: "好，我去值班室，请里面的人过来作证。",
-  e061: "我把文件袋攥紧，先看他要做什么。",
+  e061: "我要拿证据逼他说明白，让值班人员听见。",
   e063: "他还在逼过来。我知道这一步意味着什么。",
   e066: "我会按刚才谈的，把约定的材料交给他。",
 };
 
 const retreatAdvice = /撤离|撤退|快走|后退|退开|绕开|拉开.{0,3}距离|安全通道|别.{0,6}(?:拔刀|动手|对峙)|把刀.{0,4}(?:放下|收起来)/u;
 const attackAdvice = /主动.{0,10}(?:发起攻击|出手)|^(?:直接|现在)?(?:攻击|袭击|动手)/u;
+const waitAtDoorway = /等(?:一下|一会|一等|他|黑针)|别.{0,4}(?:出来|出去|出门|开门)|先躲|(?:他|黑针)走了再出去/u;
+
+function protectArchiveDoorway(dialogueAgent: NarrativeAgent): NarrativeAgent {
+  const agent: NarrativeAgent = (input, signal) => {
+    const action = input.availableEvents.find(event => event.id === "wait-for-pursuer");
+    const warning = action && input.danmaku.find(({ kind, text }) => kind === "intervention" && waitAtDoorway.test(text));
+    if (!action || !warning) return dialogueAgent(input, signal);
+    signal?.throwIfAborted();
+    return Promise.resolve({
+      narration: actionReplies[action.id],
+      danmakuDecisions: input.danmaku.map(({ id }) => id === warning.id
+        ? { danmakuId: id, decision: "accept", reason: "走廊尚未安全，先留在门后。" }
+        : { danmakuId: id, decision: "defer", reason: "先等走廊清空。" }),
+      proposedEvents: [{ storyEventId: action.id, danmakuId: warning.id }],
+      nextStep: { kind: "stay" },
+      memories: [],
+      trustDelta: 0,
+    });
+  };
+  agent.chooseAutonomousAction = dialogueAgent.chooseAutonomousAction;
+  return agent;
+}
 
 // Scripted model output for this pack. Engine validation still governs every action and clue.
 const registry = new ProviderRegistry();
@@ -132,7 +158,7 @@ registry.register(createMockProvider("reader-mock", true, ({ messages }) => {
   } satisfies AgentTurnOutput);
 }));
 
-export async function startReaderSession() {
+export async function startReaderSession(clock = Date.now) {
   const now = Date.now();
   for (const [id, session] of sessions) {
     if (!session.busy && now - session.touchedAt >= sessionLifetime) sessions.delete(id);
@@ -147,7 +173,7 @@ export async function startReaderSession() {
     sessionRegistry.register(createDeepSeekProvider());
   }
   const session: ReaderSession = {
-    engine: startSession(pack, createNarrativeAgent(pack, sessionRegistry, providerId)),
+    engine: startSession(pack, protectArchiveDoorway(createNarrativeAgent(pack, sessionRegistry, providerId)), 30_000, clock),
     title: pack.manifest.title,
     character: pack.manifest.character.name,
     hasFirstInterventionLine: Boolean(pack.manifest.firstInterventionLine),
@@ -194,9 +220,12 @@ export function readerView(id: string, session: ReaderSession) {
     scene: session.sceneTitles.get(state.currentSceneId),
     revision: timeline.at(-1)?.sequence ?? 0,
     mode,
+    nextStepDelayMs: session.engine.getAutonomousDelayMs(),
     chatReady: !session.hasFirstInterventionLine || timeline.some(entry => entry.type === "intervention_opened"),
     entries,
     eventIds,
+    discoveredClueIds: state.discoveredClueIds,
+    guidanceMail: progressMail(state),
   };
 }
 

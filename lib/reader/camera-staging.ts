@@ -23,6 +23,7 @@ export type Walkable = { minX: number; maxX: number; minY: number; maxY: number;
 
 type SceneStaging = {
   enterFrom: Spot;
+  heiEnter?: Spot;
   heiExit: Spot;
   opening: Cue;
   events: Record<string, Cue>;
@@ -31,7 +32,8 @@ type SceneStaging = {
 
 // Feet positions. A desk hides the lower half of whoever stands just behind its back legs.
 const s1 = { desk: [138, 128], backCabinet: [94, 103], lowCabinet: [58, 130], door: [217, 103] } satisfies Record<string, Spot>;
-const s2 = { office: [106, 102], storage: [146, 102], stairs: [46, 118], door: [217, 103], mid: [168, 120], hide: [84, 104] } satisfies Record<string, Spot>;
+const s2 = { office: [106, 102], storage: [338, 128], stairs: [46, 118], door: [106, 102], mid: [168, 120], hide: [84, 104] } satisfies Record<string, Spot>;
+export const firstHallPursuerStop: Spot = [183, 122];
 const s3 = { terminal: [120, 121], partition: [40, 133], door: [217, 103] } satisfies Record<string, Spot>;
 const s4 = { lab: [146, 102], storeroom: [106, 102], quStand: [224, 122], heiStand: [120, 122] } satisfies Record<string, Spot>;
 const s5 = { backCabinet: [118, 103], desk: [138, 128], door: [217, 103], heiDoor: [222, 108] } satisfies Record<string, Spot>;
@@ -62,21 +64,29 @@ export const staging: Record<string, SceneStaging> = {
       e005: { qu: { at: s1.desk, pose: "phone" } },
       e006: { qu: { at: s1.backCabinet, pose: "read" } },
       e007: { qu: { at: s1.door, pose: "listen" } },
-      e008: { qu: { at: s1.door, exit: true } },
-      "leave-now": { qu: { at: s1.door, exit: true } },
+      e008: { qu: { at: s1.door, pose: "listen" } },
+      "leave-now": { qu: { at: s1.door, pose: "listen" } },
+      "step-into-hall": { qu: { at: s1.door, exit: true } },
+      "wait-for-pursuer": { qu: { at: [193, 110], pose: "listen" } },
+      "patrol-clears-hall": { qu: { at: [193, 110], pose: "listen" } },
+      "stairs-after-patrol": { qu: { at: s1.door, exit: true } },
     },
   },
   s02: {
     enterFrom: s2.door,
+    heiEnter: firstHallPursuerStop,
     heiExit: offLeft,
     walk: { minX: 30, maxX: 300, minY: 101, maxY: 130, avoid: [[0, 108, 78, 152]] },
-    opening: { qu: { at: [196, 108] }, hei: { at: [24, 122] } },
+    opening: { qu: { at: [138, 113], pose: "listen" }, hei: { at: firstHallPursuerStop, pose: "listen" } },
     events: {
       e009: { qu: { at: s2.office, exit: true }, hei: { at: [56, 122] } },
       e010: { qu: { at: s2.hide, pose: "crouch" }, hei: { at: [146, 124] } },
       e011: { qu: { at: s2.stairs, run: true }, hei: { at: [116, 124] } },
       e012: { qu: { at: s2.storage, exit: true }, hei: { at: [90, 122] } },
       e013: { qu: { at: s2.hide, pose: "crouch" }, hei: { at: s2.mid } },
+      "patrol-1-moving": { qu: { at: s2.hide, pose: "crouch" }, hei: { at: offRight, exit: true } },
+      "patrol-1-clear": { qu: { at: s2.hide, pose: "crouch" }, hei: { at: offRight, exit: true } },
+      "safe-escape": { qu: { at: offLeft, exit: true } },
       e014: { qu: { at: s2.hide, pose: "crouch" }, hei: { at: offRight, exit: true } },
       e015: { qu: { at: s2.hide, pose: "read" } },
       e016: { qu: { at: s2.stairs, run: true }, hei: { at: [146, 122], run: true } },
@@ -99,8 +109,7 @@ export const staging: Record<string, SceneStaging> = {
       e025: { qu: { at: s3.terminal, pose: "read" } },
       "compare-after-memo": { qu: { at: s3.terminal, pose: "read" } },
       e026: { qu: { at: s3.partition, pose: "crouch", run: true }, hei: { at: [222, 106] } },
-      e027: { qu: { at: s3.partition, pose: "crouch" }, hei: { at: [222, 106] } },
-      e028: { qu: { at: s3.partition, pose: "crouch" }, hei: { at: [204, 110] } },
+      "patrol-observation-clear": { qu: { at: s3.partition, pose: "crouch" }, hei: { at: s3.door, exit: true } },
       e029: { qu: { at: offLeft, exit: true } },
     },
   },
@@ -110,10 +119,11 @@ export const staging: Record<string, SceneStaging> = {
     walk: { minX: 40, maxX: 300, minY: 101, maxY: 130, avoid: [] },
     opening: { qu: { at: s4.quStand }, hei: { at: s4.heiStand } },
     events: {
-      e030: { qu: { at: s4.quStand }, hei: { at: s4.heiStand } },
-      e031: { qu: { at: s4.quStand }, hei: { at: s4.heiStand } },
-      e032: { qu: { at: s4.quStand }, hei: { at: s4.heiStand } },
-      e033: { qu: { at: [208, 122] }, hei: { at: s4.heiStand } },
+      e030: { qu: { at: s4.lab, exit: true }, hei: { at: s4.heiStand } },
+      e031: { qu: { at: s4.lab, exit: true }, hei: { at: s4.heiStand } },
+      e032: { qu: { at: s4.lab, exit: true }, hei: { at: s4.heiStand } },
+      "patrol-2-moving": { qu: { at: s4.lab, exit: true }, hei: { at: offLeft, exit: true } },
+      e033: { qu: { at: [208, 122] }, hei: { at: offLeft, exit: true } },
       e034: { qu: { at: [270, 126], pose: "knife" }, hei: { at: [140, 122] } },
       e035: { qu: { at: s4.lab, pose: "crouch" }, hei: { at: [90, 124] } },
       e036: { qu: { at: s4.storeroom, exit: true }, hei: { at: [188, 124] } },
@@ -194,7 +204,13 @@ export function cueFor(sceneId: string, eventIds: readonly string[]): Cue | unde
   if (!scene) return;
   for (let i = eventIds.length - 1; i >= 0; i--) {
     const cue = scene.events[eventIds[i]];
-    if (cue) return cue;
+    if (cue) {
+      if (sceneId === "s02" && ["patrol-1-moving", "patrol-1-clear", "e014"].includes(eventIds[i])) {
+        return { ...cue, qu: eventIds.includes("e012")
+          ? { at: s2.storage, exit: true } : { at: s2.hide, pose: "crouch" } };
+      }
+      return cue;
+    }
   }
   return scene.opening;
 }

@@ -155,11 +155,14 @@ export function drawShell(ctx: Ctx, scene: number) {
   }
 
   // Metal door frame and inset observation pane.
-  const bx = scene === 6 ? 169 : 202;
-  box(ctx, bx, 41, 31, 58, 1); box(ctx, bx + 2, 43, 27, 55, 3); box(ctx, bx + 7, 49, 15, 14, 1);
-  box(ctx, bx + 8, 50, 13, 10, 5); box(ctx, bx + 22, 72, 3, 2, 7);
-
-  if (scene === 2 || scene === 4) {
+  if (scene === 2) {
+    box(ctx, 95, 42, 23, 55, 1); box(ctx, 97, 44, 19, 52, 3); box(ctx, 100, 48, 13, 14, 5);
+  } else {
+    const bx = scene === 6 ? 169 : 202;
+    box(ctx, bx, 41, 31, 58, 1); box(ctx, bx + 2, 43, 27, 55, 3); box(ctx, bx + 7, 49, 15, 14, 1);
+    box(ctx, bx + 8, 50, 13, 10, 5); box(ctx, bx + 22, 72, 3, 2, 7);
+  }
+  if (scene === 4) {
     for (const x of [95, 135]) { box(ctx, x, 42, 23, 55, 1); box(ctx, x + 2, 44, 19, 52, 3); box(ctx, x + 5, 48, 13, 14, 5); }
   }
   if (scene === 3) { box(ctx, 145, 40, 45, 28, 1); box(ctx, 147, 42, 41, 24, 3); }
@@ -219,7 +222,16 @@ function crate(x: number, y: number): Drawable {
 
 const stairs: Drawable = {
   baseY: 149,
-  draw(ctx) { for (let j = 0; j < 6; j++) box(ctx, 6 + j * 4, 145 - j * 6, 46, 4, 5); },
+  draw(ctx) {
+    fillPoly(ctx, [[0, 150], [72, 113], [74, 151], [47, 163], [0, 161]], "#090b0c");
+    fillPoly(ctx, [[5, 153], [58, 128], [46, 156], [0, 160]], "#040506");
+    for (let j = 0; j < 6; j++) {
+      const x = 6 + j * 4;
+      const y = 145 - j * 6;
+      fillPoly(ctx, [[x, y], [x + 46, y], [x + 50, y - 2], [x + 4, y - 2]], palette[5]);
+      box(ctx, x, y + 1, 46, 3, j > 2 ? 3 : 2);
+    }
+  },
 };
 
 const papers = (ctx: Ctx) => { for (let i = 0; i < 4; i++) box(ctx, 127 + i * 2, 112 + i, 11, 2, 8); };
