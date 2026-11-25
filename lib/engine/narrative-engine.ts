@@ -23,8 +23,8 @@ function freezeContext<T>(value: T): T {
 
 
 const MISSED_ROUNDS_BEFORE_PASSING = 3;
-export function startSession(pack: StoryPack, agent: NarrativeAgent = mockAgent, timeoutMs = 30_000): NarrativeEngine {
-  return new NarrativeEngine(pack, agent, timeoutMs);
+export function startSession(pack: StoryPack, agent: NarrativeAgent = mockAgent, timeoutMs = 30_000, clock = Date.now): NarrativeEngine {
+  return new NarrativeEngine(pack, agent, timeoutMs, clock);
 }
 
 export class NarrativeEngine {
@@ -43,8 +43,11 @@ export class NarrativeEngine {
   #processing = false;
   #queueVersion = 0;
   #receipts = new Map<string, Danmaku>();
+  #clock: () => number;
+  #scheduled?: { id: string; readyAt: number };
 
-  constructor(pack: StoryPack, agent: NarrativeAgent, timeoutMs = 30_000) {
+  constructor(pack: StoryPack, agent: NarrativeAgent, timeoutMs = 30_000, clock = Date.now) {
+    this.#clock = clock;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647) throw new Error("Invalid agent timeout");
     this.#timeoutMs = timeoutMs;
     this.#pack = structuredClone(pack);
@@ -115,6 +118,18 @@ export class NarrativeEngine {
     return true;
   }
 
+  // Authored world events keep time without asking the character's model to act.
+  // The same deadline survives chat messages and repeated/stale polling.
+  getAutonomousDelayMs() {
+    const action = this.#openEventIds.length ? undefined
+      : availableEvents(this.#pack, this.#state, "autonomous").find(event => event.delayMs);
+    if (!action) { this.#scheduled = undefined; return 0; }
+    if (this.#scheduled?.id !== action.id) {
+      this.#scheduled = { id: action.id, readyAt: this.#clock() + action.delayMs! };
+    }
+    return Math.max(0, this.#scheduled.readyAt - this.#clock());
+  }
+
   async advanceAutonomousStep() {
     if (this.#state.endingId !== null) return { status: "completed" as const };
     this.#requireActive();
@@ -126,7 +141,8 @@ export class NarrativeEngine {
     const passed = availableInterventionEvents(this.#pack, state)
       .filter(({ id }) => this.#passedEventIds.has(id))
       .map(event => ({ ...event, trigger: "autonomous" as const, result: event.description }));
-    const candidates = [...availableEvents(this.#pack, state, "autonomous"), ...passed];
+    const candidates: Extract<StoryEvent, { trigger: "autonomous" }>[] =
+      [...availableEvents(this.#pack, state, "autonomous"), ...passed];
     const scene = this.#pack.scenes.find(({ id }) => id === state.currentSceneId)!;
     if (!candidates.length) {
       const exit = scene.transitions.find(({ requiresClueIds, afterEventId }) => afterEvent(this.#state, afterEventId) &&
@@ -138,6 +154,12 @@ export class NarrativeEngine {
       return this.evaluateEnding()
         ? { status: "completed" as const }
         : { status: "no_action" as const };
+    }
+
+    const scheduled = candidates.find(action => action.delayMs);
+    if (scheduled) {
+      if (this.getAutonomousDelayMs() > 0) return { status: "waiting_for_time" as const };
+      return this.#executeAutonomousAction(scheduled);
     }
 
     const choose = this.#agent.chooseAutonomousAction;
@@ -420,7 +442,10 @@ export class NarrativeEngine {
     // passes: the window stops reopening and the protagonist chooses one of those actions himself.
     this.#missedRounds = validatedEvents.length ? 0 : this.#missedRounds + 1;
     if (this.#missedRounds >= MISSED_ROUNDS_BEFORE_PASSING) {
-      for (const id of this.#openEventIds) this.#passedEventIds.add(id);
+      for (const id of this.#openEventIds) {
+        // Irreversible choices must not become autonomous just because clarification took time.
+        if (!this.#pack.events.find(event => event.id === id)?.requiresPlayerChoice) this.#passedEventIds.add(id);
+      }
       this.#missedRounds = 0;
     }
     this.#closeWindow();

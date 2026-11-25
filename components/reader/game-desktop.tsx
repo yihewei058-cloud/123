@@ -8,6 +8,10 @@ import { CameraFeed, useShiftClock } from "./camera-feed";
 import { getAudioVolume, initAudio, isMuted, onMutedChange, playMailArrival, setAudioVolume, setMuted } from "../../lib/reader/audio";
 import { DutyFiles, DutyNote, DutyTimeNotice, MonitorLogin, newNightMail, NightInbox, RefusalAlarm, type NightMailId } from "./night-desktop";
 import { ArchiveRunner } from "./archive-runner";
+import { DutyDocument, localDocumentTitle, type LocalDocumentId } from "./night-desktop";
+import { WindowResize } from "./window-resize";
+import type { ReaderView } from "../../lib/reader/reader-session";
+import type { ProgressMail } from "../../lib/reader/progress-mail";
 import "./desktop.css";
 import "./desktop-glass-preview.css";
 
@@ -16,9 +20,8 @@ type Phase = "desktop" | "frozen" | "fault" | "online";
 const frozenDuration = 780;
 const faultDuration = 640;
 type WindowPosition = { left: number; top: number };
-type WindowId = App | "terminal";
-type DesktopWindow = { id: WindowId; minimized?: boolean; maximized?: boolean; position?: WindowPosition };
-const utilityIds: App[] = ["browser", "monitor", "inbox", "files", "note", "system"];
+type WindowId = App | "terminal" | `doc:${LocalDocumentId}`;
+type DesktopWindow = { id: WindowId; minimized?: boolean; maximized?: boolean; position?: WindowPosition; size?: { width: number; height: number } };
 const apps = [
   { id: "inbox", title: "收件箱", Icon: Mail },
   { id: "files", title: "我的文件", Icon: FolderClosed },
@@ -229,6 +232,29 @@ export function GameDesktop() {
   const stopMailChime = useRef<(() => void) | undefined>(undefined);
   const [playing, setPlaying] = useState(false);
   const [finished, setFinished] = useState(false);
+  const [progress, setProgress] = useState<ReaderView>();
+  const [mailNotice, setMailNotice] = useState<ProgressMail>();
+  const progressSession = useRef<string | undefined>(undefined);
+  const deliveredMail = useRef(new Set<string>());
+  const onProgress = useCallback((view: ReaderView) => {
+    if (progressSession.current !== view.id) {
+      progressSession.current = view.id;
+      deliveredMail.current.clear();
+      setReadNightMail(read => read.filter(id => !id.startsWith("progress-")));
+      setSelectedMail(selected => selected?.startsWith("progress-") ? undefined : selected);
+      setMailNotice(undefined);
+    }
+    setProgress(view);
+  }, []);
+  useEffect(() => {
+    const fresh = (progress?.guidanceMail ?? []).filter(mail => !deliveredMail.current.has(mail.id));
+    if (!fresh.length) return;
+    fresh.forEach(mail => deliveredMail.current.add(mail.id));
+    setMailNotice(fresh.at(-1));
+    const stop = playMailArrival(0);
+    const timer = window.setTimeout(() => stop?.(), 1800);
+    return () => { window.clearTimeout(timer); stop?.(); };
+  }, [progress]);
   const finishStory = useCallback(() => setFinished(true), []);
   const drag = useRef<{
     dx: number; dy: number; pointerId: number; target: HTMLElement;
@@ -238,13 +264,14 @@ export function GameDesktop() {
   const nightDesktop = phase === "online";
   const monitorReady = nightDesktop && intro === "unlocked";
   const unreadCount = nightDesktop && intro !== "locked"
-    ? newNightMail.filter(id => !readNightMail.includes(id)).length : 0;
+    ? [...newNightMail, ...(progress?.guidanceMail ?? []).map(mail => mail.id)].filter(id => !readNightMail.includes(id)).length : 0;
   const shiftDate = nightDesktop && openedOn ? newsDateFormat.format(previousWeek(openedOn)) : undefined;
   const openingNews = phase === "desktop";
   const terminal = windows.find(window => window.id === "terminal");
   const foreground = windows.findLast(window => !window.minimized)?.id;
   const waitingForAnswer = intro === "mail" && readNightMail.includes("stranger");
   const windowTitle = (id: WindowId) => {
+    if (id.startsWith("doc:")) return localDocumentTitle(id.slice(4) as LocalDocumentId) + " · 记事本";
     if (id === "browser") return openingNews ? "北城日报 · 浏览器" : "浏览器";
     if (id === "terminal") return "监控终端";
     if (id === "monitor") return "监控";
@@ -253,6 +280,8 @@ export function GameDesktop() {
   };
   const windowStyle = (id: WindowId, window: DesktopWindow): CSSProperties => ({
     ...(!window.maximized && window.position),
+    ...(!window.maximized && window.size),
+    ...(!window.maximized && window.size ? { maxHeight: "none", maxWidth: "none" } : {}),
     zIndex: 2 + windows.findIndex(item => item.id === id),
   });
   const desktopStatus = phase === "frozen" ? "程序未响应"
@@ -315,7 +344,7 @@ export function GameDesktop() {
   useEffect(initAudio, []);
 
   useEffect(() => {
-    const reset = () => setWindows(current => current.map(window => ({ ...window, position: undefined })));
+    const reset = () => setWindows(current => current.map(window => ({ ...window, position: undefined, size: undefined })));
     window.addEventListener("resize", reset);
     return () => window.removeEventListener("resize", reset);
   }, []);
@@ -332,6 +361,7 @@ export function GameDesktop() {
   }
   function selectNightMail(id: NightMailId) {
     setSelectedMail(id);
+    setMailNotice(notice => notice?.id === id ? undefined : notice);
     if (readNightMail.includes(id)) return;
     const next = [...readNightMail, id];
     setReadNightMail(next);
@@ -407,20 +437,21 @@ export function GameDesktop() {
             onClose={() => dismissWindow("terminal")} />
         </div>
       </header>
-      {playing ? <StoryPreview onComplete={finishStory} onExit={() => dismissWindow("terminal")}/> : <div className="intercept">
+      {playing ? <StoryPreview onComplete={finishStory} onProgress={onProgress} onExit={() => dismissWindow("terminal")}/> : <div className="intercept">
         <CameraFeed sceneId="s00" whitePinAtEntrance/>
         <div className="reader-feed-top reader-meta">
-          <button type="button" className="camera-exit" onClick={() => dismissWindow("terminal")}>退出</button>
           <div className="reader-feed-identity"><span>CAM / 00</span><CameraRecording /></div>
         </div>
         <div className="cam-location">研究中心正门</div>
         <button type="button" className="assist night-enter-story" onClick={connectMonitor}>进入中控</button>
       </div>}
+      {!terminal?.maximized && <WindowResize onResize={({ left, top, width, height }) =>
+        updateWindow("terminal", { position: { left, top }, size: { width, height } })} />}
     </section>}
-    {utilityIds.map(app => {
-      const window = windows.find(item => item.id === app);
-      if (!window) return null;
-      return <section key={app} data-night-app={nightDesktop ? app : undefined}
+    {windows.filter(item => item.id !== "terminal").map(window => {
+      const app = window.id;
+      const documentId = app.startsWith("doc:") ? app.slice(4) as LocalDocumentId : undefined;
+      return <section key={app} data-night-app={nightDesktop ? documentId ? "document" : app : undefined}
         className={'utility os-window' + (app === "browser" ? " desktop-browser" : "") +
           (app === "browser" && openingNews ? " has-opening-news" : "") + (window.maximized ? " is-maximized" : "")}
         aria-label={windowTitle(app)} hidden={window.minimized} style={windowStyle(app, window)}
@@ -437,13 +468,17 @@ export function GameDesktop() {
       {app === "browser" ? <BrowserPage openingNews={openingNews} openedOn={openedOn} active={foreground === "browser" && !alarming && !showTimeNotice} />
       : nightDesktop && app === "monitor" ? <MonitorLogin accepted={intro === "accepted"} onUnlock={unlockMonitor} />
       : nightDesktop && app === "inbox" ? <NightInbox delivered={intro !== "locked"}
-        read={readNightMail} selected={selectedMail} accepted={intro === "accepted" || intro === "unlocked"}
+        read={readNightMail} selected={selectedMail} progress={progress?.guidanceMail} accepted={intro === "accepted" || intro === "unlocked"}
         onSelect={selectNightMail} onAccept={acceptNightMail} onRefuse={() => setAlarming(true)} />
       : nightDesktop && app === "note" ? <DutyNote />
-      : nightDesktop && app === "files" && !finished ? <DutyFiles onOpenNote={() => launch("note")} />
+      : nightDesktop && documentId ? <DutyDocument id={documentId} discoveredClueIds={progress?.discoveredClueIds ?? []} />
+      : nightDesktop && app === "files" && !finished ? <DutyFiles onOpenNote={() => launch("note")}
+        onOpenDocument={id => focusWindow(`doc:${id}`)} />
       : <div className="utility-body">{app === "files" ? <><small>本地磁盘　/　工作目录</small><h2>我的文件</h2>{finished ? <ul>{["完整叙事文本", "人物与世界设定", "故事分析", "弹幕交互设计"].map(name =>
           <li key={name}><a href={`/story-archive/${name}.txt`} download>{name} ↓</a></li>)}</ul> : <p>调查结束后，本次任务的剧本档案将在这里开放。</p>}</> :
         <><small>终端系统　/　设备状态</small><h2>本机信息</h2><p>工作模式　夜班值守</p><p>监控通道　已连接</p><p>关闭权限　由系统管理</p></>}</div>}
+      {!window.maximized && <WindowResize onResize={({ left, top, width, height }) =>
+        updateWindow(app, { position: { left, top }, size: { width, height } })} />}
       </section>;
     })}
     <footer className="os-taskbar">
@@ -468,6 +503,12 @@ export function GameDesktop() {
         <DesktopClock shiftTime={nightDesktop ? clock : undefined} shiftDate={shiftDate} />
       </div>
     </footer>
+    {mailNotice && <div className="progress-mail-notice" role="status">
+      <button type="button" onClick={() => { selectNightMail(mailNotice.id); focusWindow("inbox"); }}>
+        <Mail size={18} aria-hidden="true" /><span>陌生人发来新邮件<br /><strong>{mailNotice.subject}</strong></span>
+      </button>
+      <button type="button" aria-label="关闭新邮件提醒" onClick={() => setMailNotice(undefined)}><X size={16} /></button>
+    </div>}
     {alarming && <RefusalAlarm onAccept={acceptNightMail} />}
     {showTimeNotice && <DutyTimeNotice onDismiss={() => setShowTimeNotice(false)} />}
   </div>;

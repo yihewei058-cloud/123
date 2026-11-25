@@ -77,6 +77,9 @@ export const staging: Record<string, SceneStaging> = {
       e011: { qu: { at: s2.stairs, run: true }, hei: { at: [116, 124] } },
       e012: { qu: { at: s2.storage, exit: true }, hei: { at: [90, 122] } },
       e013: { qu: { at: s2.hide, pose: "crouch" }, hei: { at: s2.mid } },
+      "patrol-1-moving": { qu: { at: s2.hide, pose: "crouch" }, hei: { at: offRight, exit: true } },
+      "patrol-1-clear": { qu: { at: s2.hide, pose: "crouch" }, hei: { at: offRight, exit: true } },
+      "safe-escape": { qu: { at: offLeft, exit: true } },
       e014: { qu: { at: s2.hide, pose: "crouch" }, hei: { at: offRight, exit: true } },
       e015: { qu: { at: s2.hide, pose: "read" } },
       e016: { qu: { at: s2.stairs, run: true }, hei: { at: [146, 122], run: true } },
@@ -101,6 +104,7 @@ export const staging: Record<string, SceneStaging> = {
       e026: { qu: { at: s3.partition, pose: "crouch", run: true }, hei: { at: [222, 106] } },
       e027: { qu: { at: s3.partition, pose: "crouch" }, hei: { at: [222, 106] } },
       e028: { qu: { at: s3.partition, pose: "crouch" }, hei: { at: [204, 110] } },
+      "patrol-observation-clear": { qu: { at: s3.partition, pose: "crouch" }, hei: { at: s3.door, exit: true } },
       e029: { qu: { at: offLeft, exit: true } },
     },
   },
@@ -110,10 +114,11 @@ export const staging: Record<string, SceneStaging> = {
     walk: { minX: 40, maxX: 300, minY: 101, maxY: 130, avoid: [] },
     opening: { qu: { at: s4.quStand }, hei: { at: s4.heiStand } },
     events: {
-      e030: { qu: { at: s4.quStand }, hei: { at: s4.heiStand } },
-      e031: { qu: { at: s4.quStand }, hei: { at: s4.heiStand } },
-      e032: { qu: { at: s4.quStand }, hei: { at: s4.heiStand } },
-      e033: { qu: { at: [208, 122] }, hei: { at: s4.heiStand } },
+      e030: { qu: { at: s4.lab, exit: true }, hei: { at: s4.heiStand } },
+      e031: { qu: { at: s4.lab, exit: true }, hei: { at: s4.heiStand } },
+      e032: { qu: { at: s4.lab, exit: true }, hei: { at: s4.heiStand } },
+      "patrol-2-moving": { qu: { at: s4.lab, exit: true }, hei: { at: offLeft, exit: true } },
+      e033: { qu: { at: [208, 122] }, hei: { at: offLeft, exit: true } },
       e034: { qu: { at: [270, 126], pose: "knife" }, hei: { at: [140, 122] } },
       e035: { qu: { at: s4.lab, pose: "crouch" }, hei: { at: [90, 124] } },
       e036: { qu: { at: s4.storeroom, exit: true }, hei: { at: [188, 124] } },
@@ -194,7 +199,13 @@ export function cueFor(sceneId: string, eventIds: readonly string[]): Cue | unde
   if (!scene) return;
   for (let i = eventIds.length - 1; i >= 0; i--) {
     const cue = scene.events[eventIds[i]];
-    if (cue) return cue;
+    if (cue) {
+      if (sceneId === "s02" && ["patrol-1-moving", "patrol-1-clear", "e014"].includes(eventIds[i])) {
+        return { ...cue, qu: eventIds.includes("e012")
+          ? { at: s2.storage, exit: true } : { at: s2.hide, pose: "crouch" } };
+      }
+      return cue;
+    }
   }
   return scene.opening;
 }

@@ -45,6 +45,7 @@ export const storySceneSchema = z.strictObject({
 });
 
 const storyEventFields = {
+  requiresPlayerChoice: z.boolean().optional(),
   follows: idListSchema.optional(),
   requiresEventIds: idListSchema.optional(),
   excludesEventIds: idListSchema.optional(),
@@ -58,11 +59,13 @@ const storyEventFields = {
 
 export const storyEventSchema = z.discriminatedUnion("trigger", [
   z.strictObject({ ...storyEventFields, trigger: z.literal("danmaku-intervention") }),
-  z.strictObject({ ...storyEventFields, trigger: z.literal("autonomous"), result: textSchema }),
+  z.strictObject({ ...storyEventFields, trigger: z.literal("autonomous"), result: textSchema,
+    delayMs: z.number().int().min(1).max(60_000).optional() }),
 ]);
 
 export const storyEndingSchema = z.strictObject({
   priority: z.number(),
+  requiresEventIds: idListSchema.optional(),
   afterEventId: idSchema.optional(),
   epilogue: textSchema.optional(),
   id: idSchema,

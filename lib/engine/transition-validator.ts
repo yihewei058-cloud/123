@@ -22,6 +22,7 @@ export function requireTransition(pack: StoryPack, state: SceneEvidence, target:
 export function eligibleEnding(pack: StoryPack, state: SceneEvidence) {
   return pack.endings.filter((ending) =>
     ending.sceneId === state.currentSceneId && afterEvent(state, ending.afterEventId) &&
+    (ending.requiresEventIds ?? []).every(id => afterEvent(state, id)) &&
     ending.requiresClueIds.every((id) => state.discoveredClueIds.includes(id)) &&
     ending.excludesClueIds.every((id) => !state.discoveredClueIds.includes(id)),
   ).sort((a, b) => b.priority - a.priority)[0];

@@ -27,7 +27,6 @@ export function StudyFeed({ scene, sceneId, eventIds, reply, onExit }: {
       <div className="reader-crt" aria-hidden="true" />
       {showWall && <CameraWall sceneId={sceneId} eventIds={eventIds} surface={surface} />}
       <div className="reader-feed-top reader-meta">
-        {onExit && !showWall && <button type="button" className="camera-exit" onClick={onExit}>退出</button>}
         {onExit && live && <button type="button" className="camera-exit camera-wall-toggle"
           aria-label={showWall ? "关闭多路监控" : "打开多路监控"} aria-pressed={showWall}
           onClick={() => setWallOpen(open => !open)}><Grid2X2 size={15} aria-hidden="true" /></button>}

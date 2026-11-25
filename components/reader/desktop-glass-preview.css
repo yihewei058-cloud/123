@@ -414,41 +414,6 @@
 }
 .os-glass-preview .camera-bubble::after { border-top-color: var(--bubble-bottom); }
 
-.os-glass-preview .os-monitor.is-maximized .reader {
-  padding: clamp(6px, 1vw, 18px);
-}
-.os-glass-preview .os-monitor.is-maximized .reader-layout {
-  --panel-gap: clamp(8px, 0.95vw, 18px);
-  width: 100%;
-  gap: var(--panel-gap);
-}
-.os-glass-preview .os-monitor.is-maximized .reader-layout::before { content: none; }
-.os-glass-preview .os-monitor.is-maximized .reader-feed canvas {
-  max-height: none;
-  object-fit: contain;
-  object-position: center;
-}
-.os-glass-preview .os-monitor.is-maximized .reader-chat li { max-width: min(86%, 54ch); }
-
-@media (min-width: 901px) {
-  .os-glass-preview .os-monitor.is-maximized .reader-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 29%);
-  }
-  .os-glass-preview .os-monitor.is-maximized .reader-scene-panel {
-    display: grid;
-    grid-template-rows: minmax(0, 1.15fr) minmax(0, 1fr);
-    gap: var(--panel-gap);
-  }
-}
-
-@media (max-width: 600px) {
-  .os-glass-preview .os-monitor.is-maximized .reader { overflow-y: auto; }
-  .os-glass-preview .os-monitor.is-maximized .reader-layout {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(255px, 1.2fr) minmax(180px, 1fr);
-  }
-}
-
 @media (max-width: 650px) {
   .os-glass-preview .shortcuts { right: 4px; top: 1px; gap: 0; }
   .os-glass-preview .shortcuts button { width: 68px; padding: 1px; font-size: 12px; }
@@ -507,4 +472,79 @@
 }
 @media (max-width: 600px) {
   .os-glass-preview .os-monitor.is-maximized .reader-log-terminal { border-inline-end: 1px solid #a8c9e130; }
+}
+
+/* Size the game from its window, including when the window is manually resized. */
+.os-glass-preview .os-monitor { container: monitor-window / size; }
+.os-glass-preview .utility { container: utility-window / inline-size; }
+.os-glass-preview .os-window > .window-bar > span:first-child {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.os-glass-preview :is(.window-controls, .window-actions) { flex: none; }
+.os-glass-preview .os-monitor .reader {
+  padding: clamp(6px, 1cqw, 12px);
+  overflow: auto;
+}
+.os-glass-preview .os-monitor .reader-layout {
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 32%);
+  grid-template-rows: minmax(0, 1fr);
+  row-gap: 8px;
+}
+.os-glass-preview .os-monitor .reader-scene-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.os-glass-preview .os-monitor .reader-camera-device {
+  flex: none;
+  height: min(62cqh, 55cqw);
+  min-width: 0;
+}
+.os-glass-preview .os-monitor .reader-tv-body,
+.os-glass-preview .os-monitor .reader-tv-screen { min-height: 0; min-width: 0; }
+.os-glass-preview .os-monitor .reader-feed > :is(canvas, img),
+.os-glass-preview .os-monitor .intercept > .camera-image {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  object-position: center;
+}
+.os-glass-preview .os-monitor .reader-feed { overflow: hidden; }
+.os-glass-preview .os-monitor .reader-feed-identity { overflow: hidden; }
+.os-glass-preview .os-monitor .reader-camera-location { text-overflow: ellipsis; overflow: hidden; }
+.os-glass-preview .os-monitor .reader-rec { flex: none; }
+.os-glass-preview .os-monitor .reader-story { min-width: 0; min-height: 0; }
+.os-glass-preview .os-monitor .reader-chat li { max-width: 94%; }
+.os-glass-preview .os-monitor .reader-form { gap: 5px; }
+.os-glass-preview .os-monitor .reader-form input { width: 0; }
+.os-glass-preview .os-monitor .reader-tabs { flex-wrap: wrap; padding-left: 8px; }
+
+@container monitor-window (max-width: 620px) {
+  .os-glass-preview .os-monitor .reader-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(260px, 1.2fr) minmax(200px, 1fr);
+    min-height: 470px;
+  }
+  .os-glass-preview .os-monitor .reader-layout .reader-log-terminal { border-inline-end: 1px solid #a8c9e130; }
+  .os-glass-preview .os-monitor .reader-chat { gap: 8px; }
+  .os-glass-preview .os-monitor .reader-form { padding-top: 6px; }
+}
+@container monitor-window (min-width: 621px) and (max-height: 380px) {
+  .os-glass-preview .os-monitor .reader-layout { min-height: 300px; }
+}
+@container utility-window (max-width: 520px) {
+  .night-inbox { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 43%) minmax(0, 1fr); }
+  .night-inbox-list { border-inline-end: 0; border-bottom: 1px solid #b8c9d9; }
+}
+.os-glass-preview .utility :is(.night-inbox-list, .night-inbox-detail, .duty-document) {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

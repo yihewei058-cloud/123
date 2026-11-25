@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FileText, ShieldAlert } from "lucide-react";
+import { FileText, FolderClosed, ShieldAlert } from "lucide-react";
+import type { ProgressMail } from "../../lib/reader/progress-mail";
+import { archiveLocations, localNotebooks } from "../../lib/reader/local-notes";
 import { playRefusalAlarm, playTypeKey } from "../../lib/reader/audio";
 import "./night-desktop.css";
 
 const dutyPassword = "060427";
+const archiveReminder = "重点看监控里重要档案存放点，这个是公司最重要的机密";
 
 const inboxMessages = [
   { id: "stranger", sender: "陌生人", address: "unknown@relay.invalid", subject: "你只有今晚", time: "21:30", body: "你现在在一周前。今晚曲别针会来拿走那份记录。你一定要协助他找出真相。" },
@@ -17,11 +20,12 @@ const inboxMessages = [
   { id: "spam", sender: "会员活动提醒", address: "bonus@offers.invalid", subject: "请领取您的积分奖励", time: "上周", body: "您的活动积分即将过期。感谢您订阅会员提醒。" },
 ] as const;
 
-export type NightMailId = typeof inboxMessages[number]["id"];
+export type NightMailId = typeof inboxMessages[number]["id"] | ProgressMail["id"];
 export const newNightMail = ["stranger", "doctor"] as const;
 
-export function NightInbox({ delivered, read, selected, accepted, onSelect, onAccept, onRefuse }: {
+export function NightInbox({ delivered, read, selected, accepted, progress = [], onSelect, onAccept, onRefuse }: {
   delivered: boolean;
+  progress?: readonly ProgressMail[];
   read: readonly NightMailId[];
   selected?: NightMailId;
   accepted: boolean;
@@ -29,13 +33,14 @@ export function NightInbox({ delivered, read, selected, accepted, onSelect, onAc
   onAccept: () => void;
   onRefuse: () => void;
 }) {
-  const visible = delivered ? inboxMessages : inboxMessages.slice(2);
+  const visible: (typeof inboxMessages[number] | ProgressMail)[] = delivered ? [...progress].reverse() : [];
+  visible.push(...(delivered ? inboxMessages : inboxMessages.slice(2)));
   const message = visible.find(item => item.id === selected);
-  const regular = visible.filter(item => item.id === "stranger" || item.id === "doctor" || item.id === "digest");
+  const regular = visible.filter(item => item.id.startsWith("progress-") || item.id === "stranger" || item.id === "doctor" || item.id === "digest");
   const folded = visible.filter(item => !regular.includes(item));
 
-  function mailRow(item: typeof inboxMessages[number]) {
-    const unread = (item.id === "stranger" || item.id === "doctor") && !read.includes(item.id);
+  function mailRow(item: typeof inboxMessages[number] | ProgressMail) {
+    const unread = (item.id.startsWith("progress-") || item.id === "stranger" || item.id === "doctor") && !read.includes(item.id);
     return <button key={item.id} type="button" className={unread ? "is-unread" : "is-read"}
       aria-current={item.id === selected ? "true" : undefined} onClick={() => onSelect(item.id)}>
       <span><strong>{item.sender}</strong><time>{item.time}</time></span>
@@ -57,7 +62,7 @@ export function NightInbox({ delivered, read, selected, accepted, onSelect, onAc
         <h2>{message.subject}</h2>
         <div className="night-inbox-from"><strong>{message.sender}</strong> <span>&lt;{message.address}&gt;</span></div>
         <p>{message.id === "doctor"
-          ? <>今天晚上你守夜，好好看着监控，知道你健忘，<strong><em>密码就在文件里</em></strong>，千万别放人溜进来。</>
+          ? <>今天晚上你守夜，好好看着监控，知道你健忘，<strong><em>密码就在文件里</em></strong>，千万别放人溜进来。<br /><br /><strong>{archiveReminder}。</strong><br />位置清单放在“我的文件 → 实验室须知 → 重要档案存放点”中，值班时逐项核对。</>
           : message.body}{message.id === "stranger" && <strong className="night-mail-warning">否则，你会死。</strong>}</p>
         {message.id === "stranger" && (accepted ? <small role="status">已接受协助请求</small> :
           <div className="assist-actions">
@@ -102,13 +107,40 @@ export function MonitorLogin({ accepted, onUnlock }: {
   </form>;
 }
 
-export function DutyFiles({ onOpenNote }: { onOpenNote: () => void }) {
+export type LocalDocumentId = "archives" | typeof localNotebooks[number]["id"];
+export function localDocumentTitle(id: LocalDocumentId) {
+  return id === "archives" ? "重要档案存放点.txt" : localNotebooks.find(note => note.id === id)!.title;
+}
+
+export function DutyDocument({ id, discoveredClueIds }: { id: LocalDocumentId; discoveredClueIds: readonly string[] }) {
+  const notebook = localNotebooks.find(note => note.id === id);
+  return <article className="duty-files duty-document" aria-label={localDocumentTitle(id)}>
+    {id === "archives" ? <div className="duty-checklist">
+      {archiveLocations.map(item => <label key={item.id}>
+        <input type="checkbox" checked={discoveredClueIds.includes(item.id)} disabled />
+        <span><strong>{item.title}</strong><small>{item.place}</small></span>
+      </label>)}
+    </div> : <div className="duty-document-text">{notebook?.body}</div>}
+  </article>;
+}
+
+export function DutyFiles({ onOpenNote, onOpenDocument }: {
+  onOpenNote: () => void; onOpenDocument: (id: LocalDocumentId) => void;
+}) {
+  const [folder, setFolder] = useState(false);
   return <div className="duty-files">
-    <small>本地</small>
-    <button type="button" onClick={onOpenNote}>
-      <FileText size={20} aria-hidden="true" />
-      <span>值班备忘.txt</span>
-    </button>
+    <small>本地{folder ? " / 实验室须知" : ""}</small>
+    {folder ? <>
+      <button type="button" onClick={() => setFolder(false)}>← 返回本地文件</button>
+      <button type="button" onClick={() => onOpenDocument("archives")}><FileText size={20} aria-hidden="true" /><span>重要档案存放点.txt</span></button>
+      {localNotebooks.filter(note => note.id !== "trust").map(note => <button key={note.id} type="button" onClick={() => onOpenDocument(note.id)}>
+        <FileText size={20} aria-hidden="true" /><span>{note.title}</span>
+      </button>)}
+    </> : <>
+      <button type="button" onClick={onOpenNote}><FileText size={20} aria-hidden="true" /><span>值班备忘.txt</span></button>
+      <button type="button" onClick={() => setFolder(true)}><FolderClosed size={20} aria-hidden="true" /><span>实验室须知</span></button>
+      <button type="button" onClick={() => onOpenDocument("trust")}><FileText size={20} aria-hidden="true" /><span>信任值.txt</span></button>
+    </>}
   </div>;
 }
 

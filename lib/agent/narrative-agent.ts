@@ -22,13 +22,14 @@ const instructions = [
   "narration 是发给玩家的聊天原文，只写主角直接说的话。省略动作、语气说明、第三人称旁白、内心独白和逐项判断；决策依据留在 reason。开口时写一到三个中文短句，每句尽量不超过30个字，语义变化时另起一行。不要复述玩家刚说的话或反复引用报告。角色选择沉默时 narration 必须是空字符串，仍逐条填写 danmakuDecisions。要停顿再开口时填写 delivery: 'hesitant'，自然开口时可省略 delivery。不要用省略号代替沉默。",
   "理解否定句和行动目的，例如「别拔刀、从安全通道离开」是在建议避免冲突。接受时用角色的口吻说即将怎么做。当前没有对应行动时，回应眼前的阻碍，或请玩家补充一条具体情报。不要用通用的找东西答复代替有关撤离或对峙的回应。",
   "只有 accept 的 intervention 可在 proposedEvents 提出开放调查，每项格式为 {storyEventId,danmakuId}。仅用 availableActions 中的 ID，每项至多一次。",
-  "此轮仅提议现场调查，nextStep 使用 stay。叙述可写决定、疑问或行动意图，不能把提议写成已发生的动作或预先宣布调查结果。不可新增事实、线索或结局。trustDelta 是 -100 到 100 的整数。",
+  "此轮仅提议 availableActions 中的行动，nextStep 使用 stay。叙述可写决定、疑问或行动意图，不能把提议写成已发生的动作或预先宣布结果。不可新增事实、线索或结局。trustDelta 是 -100 到 100 的整数。",
   "只返回完整 JSON 对象，按以下字段组织。示例中的内容与 ID 应替换为当前回合的值。",
   JSON.stringify(example),
 ].join("\n");
 
 export function createNarrativeAgent(pack: StoryPack, registry: ProviderRegistry, providerId?: string, modelId?: string): NarrativeAgent {
   const { id: packId } = pack.manifest;
+  let conversationRounds = 0;
   const personality = pack.characterMarkdown;
   const facts = structuredClone(pack.facts);
   const clues = structuredClone(pack.clues);
@@ -42,7 +43,7 @@ export function createNarrativeAgent(pack: StoryPack, registry: ProviderRegistry
       scene: { id: scene.id, title: scene.title, opening: scene.opening },
       characterKnowledge: facts.filter(fact => state.knownFactIds.includes(fact.id)),
       discoveredClues: clues.filter(clue => state.discoveredClueIds.includes(clue.id) &&
-        (clue.sceneId === scene.id || relevant.has(clue.id))).map(({ id, description }) => ({ id, description })),
+        (packId === "volunteer-17" || clue.sceneId === scene.id || relevant.has(clue.id))).map(({ id, description }) => ({ id, description })),
       recentEvents: state.eventHistory.slice(-4).map(({ storyEventId, sceneId, turn }) => ({ storyEventId, sceneId, turn })),
       unverifiedMemories: state.memories.slice(-4),
       availableActions: availableEvents.map(({ id, description }) => ({ id, description })),
@@ -64,8 +65,18 @@ export function createNarrativeAgent(pack: StoryPack, registry: ProviderRegistry
     return JSON.parse(response.content) as unknown;
   }
 
-  const agent: NarrativeAgent = async (input, signal) =>
-    agentTurnOutputSchema.parse(await generate(instructions, assemble(input), signal));
+  const agent: NarrativeAgent = async (input, signal) => {
+    const trustRules = packId === "volunteer-17" ? [
+      "信任判断：当前为玩家交流第 " + (conversationRounds + 1) + " 轮。前五轮，如果玩家真诚地提到来自未来、白针、想救你等内容，结合上下文可小幅增加信任（1到5），但不把这些说法当作已证实事实。",
+      "任何阶段如果玩家威胁、胁迫或持续提出明显不可靠、危及主角安全的建议，可降低信任（-1到-8）；合理的谨慎、不同意见或善意提醒不是威胁。无足够依据时为0。结合完整语义判断，不要仅凭关键词加减分。单轮 trustDelta 限制在 -8 到 5。",
+      "玩家建议以证据威胁黑针交代事实，不等于玩家威胁曲别针，不能混淆威胁对象。最终行动由玩家建议与角色判断决定，不要随机改变杀死黑针与逼问真相这两种不同意图。",
+      "availableActions 包含躲藏、等待、撤离和最终对峙等行动，不限于调查。玩家表达明确且存在对应行动时，应认真考虑该行动；接受就必须提交对应 proposedEvents，不能只在聊天中答应。否定攻击的建议不得映射为攻击。资料不足时提醒风险，不可捏造已收齐线索。",
+    ].join("\n") : "";
+    const result = agentTurnOutputSchema.parse(await generate(instructions + "\n" + trustRules, assemble(input), signal));
+    if (packId === "volunteer-17") result.trustDelta = Math.max(-8, Math.min(5, result.trustDelta));
+    conversationRounds += 1;
+    return result;
+  };
   agent.chooseAutonomousAction = async (input, signal) => {
     const context = assemble({ ...input, danmaku: [] });
     const system = "根据主角人格、已知证据和当前目标，从 availableActions 选择一项行动。" +
